@@ -152,3 +152,7 @@ throughout; no different ROM was selected or downloaded.
   `d19b00db5eb9ac14b0890c2c5496626bddfff40b9cfed17f21a5a847603b6e20`.
   GitHub Actions is the independent Linux CMake/CTest validation record for this
   follow-up; publication must wait for its code-fix run to pass.
+- Independent Linux code-fix CI **passed**: [run 40711337926](https://github.com/Bizzerowasnotavailable/vore-nx/actions/runs/40711337926),
+  validating CMake configuration/build, CTest, ROM-free Python tests, and the
+  tracked-file privacy allowlist. v0.1.1 is approved for the same not-playable
+  installer-only release boundary; this follow-up does not change gameplay.

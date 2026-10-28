@@ -17,8 +17,9 @@ Place your own `rom.nds` beside the NRO under `sdmc:/switch/vore-nx/`.
 **A** verifies, **X** extracts, **B** cancels active work, **+** exits.
 Keep the original ROM and all extracted/generated material private.
 
-Windows-host tests and the Switch cross-build pass; see `JOURNEY.MD` for exact
-results and GitHub Actions for Linux-host checks. Eden recognized the initial
+Windows-host tests, the Switch cross-build, and independent Linux CI
+([run 40711337926](https://github.com/Bizzerowasnotavailable/vore-nx/actions/runs/40711337926))
+pass; see `JOURNEY.MD` for exact results. Eden recognized the initial
 NRO but failed its 4 GiB memory allocation and crashed; no rendered UI, physical
 Switch operation or gameplay has been verified. Static-bank emission and
 AArch64 object compilation are private development evidence, not playability.
