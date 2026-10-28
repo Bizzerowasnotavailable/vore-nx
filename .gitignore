@@ -1,0 +1,27 @@
+# All private cartridge inputs/outputs stay out of version control.
+/private/
+/build/
+/build-host/
+/dist/
+*.nds
+*.srl
+*.rom
+*.sav
+*.dsv
+*.bin
+*.elf
+*.nacp
+*.nro
+*.map
+*.lst
+*.o
+*.d
+*.log
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.mcp.json

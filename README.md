@@ -1,2 +1,138 @@
 # vore-nx
-slopic recompilation of bowser's inside story for the NX
+
+An early Nintendo Switch static-recompilation project for **Mario & Luigi:
+Bowser's Inside Story (Nintendo DS)**.
+
+**Status: ROM-preparation milestone, NOT PLAYABLE.** The included NRO verifies
+and extracts a user-supplied ROM. It does not yet execute either DS CPU or boot
+the game. This is not a completed port or an emulator disguised as one.
+
+[Development downloads](https://github.com/Bizzerowasnotavailable/vore-nx/releases)
+include the installer NRO and source package. Read the limitations before use.
+
+## Playability
+
+| Feature | Status |
+|---|---|
+| Asset-free Switch NRO | Cross-compiled with devkitA64/libnx |
+| Exact-ROM verification and private extraction | Implemented; test results in `JOURNEY.MD` |
+| Private main-code AOT banks | 2,011 discovered functions emitted; six C units compile to AArch64 objects; not runtime-integrated |
+| Overlays and indirect code coverage | 141 ARM9 overlays untranslated; indirect-target gaps remain |
+| Game title screen / new game | Not implemented |
+| Mario/Luigi and Bowser exploration/combat | Not implemented |
+| Giant battles, touch/microphone | Not implemented |
+| Audio and save/load | Not implemented |
+| Ending / full playthrough | Not tested; no gameplay currently available |
+| Real Switch / Eden runtime validation | See `JOURNEY.MD`; compilation is not runtime validation |
+
+Only **European revision 0 (`CLJP`)** is currently accepted for extraction:
+
+```text
+Size:    134217728 bytes
+SHA-256: 4d8a3ffa13ad525db85e596d576675860a816aa77560ca87c4505451c172c60b
+```
+
+Other regions/revisions, modified or trimmed images are not supported. No ROM,
+BIOS, firmware, game assets, or ROM-derived generated code is included.
+
+## Use the NRO
+
+1. Build below, or unpack the locally generated `dist/vore-nx-0.1.0.zip`.
+2. Copy `vore-nx.nro` to your homebrew-capable Switch at
+   `sdmc:/switch/vore-nx/vore-nx.nro`.
+3. Place your own matching cartridge dump at `sdmc:/switch/vore-nx/rom.nds`.
+4. Launch the NRO. **A** verifies; **X** verifies and extracts; **B** cancels
+   while working; **+** exits. Allow at least 256 MiB free space for preparation.
+
+Extracted files are private, under `sdmc:/switch/vore-nx/data/<sha256>/`.
+Installation does not edit the ROM or overwrite an existing installation. Keep
+the original ROM: extraction does not preserve every card sector. A cancelled
+operation cleans up its own newly created files; after a power loss, move an
+orphaned `.partial` directory aside before retrying.
+
+**There is no "play" option yet.** Do not redistribute your extracted files or
+translated banks. Owning a cartridge and keeping assets external is not a
+universal legal guarantee; follow the laws applicable to you. No encryption
+keys, download instructions, or Nintendo security bypasses are provided.
+
+## Build
+
+### Switch (devkitPro)
+
+In the devkitPro MSYS2 shell, with `switch-dev`/libnx installed:
+
+```sh
+make -j4
+```
+
+Or from Windows PowerShell (also handles Python not being on the MSYS PATH):
+
+```powershell
+python tools/build_switch.py
+```
+
+Output: `vore-nx.nro`. No ROM or ndsrecomp installation is needed to build this
+asset-free installer. No game icon or ROMFS is embedded.
+
+### Desktop tool and tests (C++17)
+
+```sh
+cmake -S . -B build-host -DCMAKE_BUILD_TYPE=Release
+cmake --build build-host --parallel
+ctest --test-dir build-host --output-on-failure
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+Use `build-host/vore-rom` (on Windows, possibly `build-host/Release/vore-rom.exe`)
+to inspect or extract locally:
+
+```sh
+mkdir -p private/extracted
+build-host/vore-rom inspect /path/to/your/rom.nds
+build-host/vore-rom install /path/to/your/rom.nds private/extracted
+```
+
+Use `tools/verify_install.py` to independently check an installation against the
+original ROM. Optional private integration tests and the pending Switch/UI/game
+acceptance checklists are in [`docs/TESTING.md`](docs/TESTING.md).
+
+`private/`, ROMs, generated banks, saves, and build intermediates are Git-ignored.
+Never force-add them. A valid but unrecognized ROM can be inspected, with exit
+code 3; installation requires the exact supported identity.
+
+On Windows without a host compiler, the optional pinned portable toolchain is
+available through `python tools/bootstrap_host.py host` (explicit downloads),
+then `python tools/build_host.py host`.
+
+### Private static recompilation
+
+See [`docs/AOT.md`](docs/AOT.md) for the pinned, tested `prepare`, `audit`,
+`generate`, and AArch64 object-smoke workflow. ARM9 analysis is decompressed
+locally; overlays are metadata-only. Generated banks contain ROM-derived code
+and must not be published or linked into the public installer NRO. Neither bank
+emission nor object compilation establishes game execution or completeness.
+
+### Package only distributable material
+
+```sh
+python tools/package_release.py --check
+python tools/audit_public.py
+python tools/package_release.py
+```
+
+The ZIP includes the NRO, checksums and an explicit source allowlist. The
+packager rejects an unexpected icon/ROMFS/trailing payload and common embedded
+personal-path/key markers. These checks complement source review; they are not
+a proof of copyright clearance. ZIPs are never made from the entire workspace.
+
+## Development
+
+- [`JOURNEY.MD`](JOURNEY.MD): measured progress, toolchain results, blockers.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): private data format and the
+  remaining static recompilation/runtime work.
+- [`docs/AOT.md`](docs/AOT.md): reproducible private static-bank preparation.
+- Intended recompiler: [ndsrecomp](https://github.com/mstan/ndsrecomp) v0.6.10.
+  No upstream runtime or generated game code is linked into this milestone.
+
+Original project code is MIT-licensed; devkitPro/libnx and any future dependencies
+retain their own licenses. Unaffiliated with Nintendo or the original developers.
