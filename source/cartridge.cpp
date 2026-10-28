@@ -15,9 +15,12 @@
 
 namespace vore {
 namespace {
-using File = std::unique_ptr<FILE, decltype(&std::fclose)>;
+struct CloseFile {
+    void operator()(FILE* file) const noexcept { std::fclose(file); }
+};
+using File = std::unique_ptr<FILE, CloseFile>;
 File open(const std::string& path, const char* mode) {
-    return File(std::fopen(path.c_str(),mode),std::fclose);
+    return File(std::fopen(path.c_str(),mode));
 }
 Result fail(const std::string& message) { return {false,message}; }
 bool tick(const Progress& p, const char* stage, std::uint64_t n, std::uint64_t total) {

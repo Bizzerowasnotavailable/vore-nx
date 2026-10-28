@@ -124,14 +124,31 @@ throughout; no different ROM was selected or downloaded.
   the synthetic symlink test). No cartridge is needed for these tests.
 - Independently re-checked every generated bank-file digest and all six private
   AArch64 object digests, sizes, ELF class, architecture and relocatable type.
-- Final public NRO SHA-256:
+- Initial v0.1.0 public NRO SHA-256:
   `c3e1d4064cab84981191af2db9e4a31c4dac94ffe6fef18aa03fc043f02c21f9`.
   Structural audit confirms NACP only, no icon/ROMFS/trailing payload, and no
   embedded local home paths or ROM-derived dispatch markers.
-- Public release designation: **v0.1.0 — ROM preparation (NOT PLAYABLE)**.
+- Initial public release designation: **v0.1.0 — ROM preparation (NOT PLAYABLE)**.
   Only reviewed original source, licensed-library notices, the installer NRO
   and checksums belong in publication. Generated game banks are not included.
 - Open work is unchanged: runtime/module strategy, overlay entry discovery,
   DS hardware backend, video/audio/input/save integration, real Switch testing,
   and actual game progression. This is partial progress toward the requested
   static port, not fulfillment of a playable-game milestone.
+
+## 2026-10-28 — Linux CI portability follow-up (v0.1.1)
+
+- Source and installer v0.1.0 were published after local tests and privacy checks.
+- Linux GitHub CI caught GCC's `-Werror=ignored-attributes` on an attributed
+  `fclose` function pointer used as a `unique_ptr` deleter. Windows Clang and
+  devkitA64 had accepted it. Replaced it with a named RAII deleter; did not
+  disable warnings or change file ownership/transaction semantics.
+- Bumped to v0.1.1 rather than silently moving the already-published v0.1.0 tag.
+  The old source/release is preserved. No new game runtime/playability claim.
+- v0.1.1 local rebuild passed: **260 synthetic C++ checks**, **14 private-ROM
+  integration checks**, all **237 segment** comparisons, and **31 Python passes /
+  1 platform skip**. Source/license/workflow publication allowlist: **36 files**.
+- v0.1.1 asset-free NRO SHA-256:
+  `d19b00db5eb9ac14b0890c2c5496626bddfff40b9cfed17f21a5a847603b6e20`.
+  GitHub Actions is the independent Linux CMake/CTest validation record for this
+  follow-up; publication must wait for its code-fix run to pass.

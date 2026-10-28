@@ -25,7 +25,7 @@ bool progress(const char* stage, std::uint64_t done, std::uint64_t total) {
 }
 void screen(const std::string& message, const vore::Cartridge* c=nullptr) {
     consoleClear();
-    std::printf("vore-nx 0.1.0 - ROM preparation milestone\n\n"
+    std::printf("vore-nx 0.1.1 - ROM preparation milestone\n\n"
         "NOT PLAYABLE: DS execution backend is not implemented.\n"
         "No Nintendo code, graphics, sound, BIOS or firmware included.\n\n"
         "ROM: %s\n\n"

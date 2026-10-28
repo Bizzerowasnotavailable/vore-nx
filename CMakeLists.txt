@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vore_nx_host VERSION 0.1.0 LANGUAGES CXX)
+project(vore_nx_host VERSION 0.1.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(vore_cartridge source/cartridge.cpp source/sha256.cpp)

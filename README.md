@@ -37,7 +37,7 @@ BIOS, firmware, game assets, or ROM-derived generated code is included.
 
 ## Use the NRO
 
-1. Build below, or unpack the locally generated `dist/vore-nx-0.1.0.zip`.
+1. Build below, or unpack the locally generated `dist/vore-nx-0.1.1.zip`.
 2. Copy `vore-nx.nro` to your homebrew-capable Switch at
    `sdmc:/switch/vore-nx/vore-nx.nro`.
 3. Place your own matching cartridge dump at `sdmc:/switch/vore-nx/rom.nds`.

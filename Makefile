@@ -9,7 +9,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 TARGET := vore-nx
 APP_TITLE := vore-nx ROM preparation
 APP_AUTHOR := vore-nx contributors
-APP_VERSION := 0.1.0
+APP_VERSION := 0.1.1
 BUILD := build
 PYTHON ?= python
 ARCH := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
