@@ -25,7 +25,7 @@ include the installer NRO and source package. Read the limitations before use.
 | Static-bank correctness | Differential test, banks vs. forced Tier-3 interpretation: 6/6 framebuffer checkpoints byte-identical (private measurement) |
 | Interactive desktop frontend | `tools/private/play_tk.py` (private tooling; needs a local runner build) |
 | Switch runtime (AArch64) | Experimental interpreter build visibly renders both LCDs in Eden: startup logos, animated title, save-file selection and opening Toad Town scene; actual CPU/vblank progress logged |
-| Switch game execution | Private 51-bank AArch64 build now boots and renders in Eden; measured scenes about 10–18 guest fps with threaded rendering, not full speed |
+| Switch game execution | Private 51-bank AArch64 build boots/renders in Eden; controlled boot/title benchmark improves from 16.97 to 21.46 median guest fps with whole-program LTO; still ~36% of DS realtime because Eden re-emulates the AArch64 build |
 | Display layout / screen swap | Horizontal 4:3 LCDs by default; configurable vertical layout; ZR screen swap visibly verified in Eden; touch follows the bottom LCD |
 | Controls | File-based remapping of all 12 DS buttons and hotkeys; fixed X/Y previously being held accidentally |
 | Standard SAV files | Raw 8192-byte EEPROM loading fixed and byte-compared to guest SRAM; non-overwriting padded/mirrored SAV import tool; actual progress save/load round-trip pending |
@@ -35,7 +35,7 @@ include the installer NRO and source package. Read the limitations before use.
 | Giant battles, touch/microphone | Not verified |
 | Audio and save/load (Switch) | Raw SAV backing loads/writes through runner; progress round-trip unverified; audio output not implemented |
 | Ending / full playthrough | Not tested |
-| Real Switch / Eden gameplay validation | Eden private-bank title/save-file rendering, swap hotkey and raw-save loading verified; real hardware, combat and full playthrough unverified |
+| Real Switch / Eden gameplay validation | Eden private-bank title, save-file selection, Toad Town scene, swap hotkey and raw-save loading verified; real hardware, combat and full playthrough unverified |
 
 Only **European revision 0 (`CLJP`)** is currently accepted for extraction:
 
@@ -126,6 +126,8 @@ The experimental Switch frontend and local-only runtime build are documented in
 installer NRO above; no experimental binary or generated game bank is shipped.
 See [`docs/RUNTIME_CONFIG.md`](docs/RUNTIME_CONFIG.md) for layouts, widescreen
 limitations, remapping, microphone controls, pacing and importing standard SAVs.
+Performance experiments and regression gates are in
+[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 See [`docs/AOT.md`](docs/AOT.md) for the pinned, tested `prepare`, `audit`,
 `generate`, and AArch64 object-smoke workflow. ARM9 analysis is decompressed

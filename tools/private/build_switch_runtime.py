@@ -39,7 +39,14 @@ def main():
     ap.add_argument("--devkitpro", type=Path,
                     default=Path(DEFAULT_DKP))
     ap.add_argument("--jobs", type=int, choices=range(1, 9), default=2)
+    ap.add_argument("--optimization", choices=("O2", "O3"), default="O2")
+    ap.add_argument("--lto", action="store_true", help="experimental runtime link-time optimization (no fast-math)")
+    ap.add_argument("--runtime-only", action="store_true", help="compile runtime/registry objects, omit game-bank compilation/linking")
+    ap.add_argument("--minimal-profiling", action="store_true", help="omit fine-grained host timing; keep guest counters and coarse frame timings")
+    ap.add_argument("--bank-lto", action="store_true", help="experimental whole-runtime/bank LTO; requires --lto and --banks, potentially expensive")
     args = ap.parse_args()
+    if args.bank_lto and (not args.lto or not args.banks or args.runtime_only):
+        ap.error("--bank-lto requires --lto, --banks, and a full link (not --runtime-only)")
     nds, bios, out, dkp = (p.resolve() for p in
                            (args.nds, args.bios_banks, args.output, args.devkitpro))
     banks = args.banks.resolve() if args.banks else None
@@ -85,7 +92,8 @@ def main():
         subprocess.run([sys.executable, str(Path(__file__).with_name("gen_switch_registry.py")),
                         str(banks), "--out", str(registry)], check=True)
         units.append((registry, "title_bank_registry", False))
-        units += [(p, "bank_" + p.stem, True) for p in sorted(banks.glob("*.c"))]
+        if not args.runtime_only:
+            units += [(p, "bank_" + p.stem, True) for p in sorted(banks.glob("*.c"))]
     for path, _, _ in units:
         if not path.is_file():
             ap.error(f"missing source prerequisite: {path}")
@@ -94,9 +102,13 @@ def main():
     spec = importlib.util.spec_from_file_location("switch_io_patch", Path(__file__).with_name("patch_runtime_io.py"))
     patcher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(patcher)
-    staged_io = obj / "runtime_io_switch.cpp"
-    patcher.stage(src / "io.cpp", staged_io)
-    units = [(staged_io if name == "core_io" else path, name, bank)
+    spec = importlib.util.spec_from_file_location("switch_perf_patch", Path(__file__).with_name("patch_runtime_perf.py"))
+    perf_patcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(perf_patcher)
+    staged_src = obj / "runtime-src"
+    perf_patcher.stage_runtime(src, staged_src, patcher.microphone_source, args.minimal_profiling)
+    includes.insert(0, staged_src)
+    units = [(staged_src / path.name if path.parent == src else path, name, bank)
              for path, name, bank in units]
 
     # Conservative header-content key: a changed ABI or generated header must
@@ -112,6 +124,7 @@ def main():
     common = ["-ffunction-sections", "-fdata-sections", *arch,
               "-D__SWITCH__", "-DNDS_SWITCH=1", '-DMELONDS_GL_HEADER="melonds_gl_stub.hpp"',
               f"-DVORE_PRIVATE_BANKS={int(banks is not None)}", "-Wno-unused-parameter"]
+    if args.minimal_profiling: common += ["-DVORE_MINIMAL_PROFILING=1"]
     for p in includes:
         common += ["-I", p.as_posix()]
 
@@ -121,9 +134,18 @@ def main():
         stamp = obj / f"{name}.sha256"
         c = path.suffix == ".c"
         big = bank and path.stat().st_size >= BIG_BYTES
-        flags = ["-O1" if big else "-O2", *common]
+        lean_giant = big and not args.bank_lto
+        flags = ["-O1" if lean_giant else "-" + args.optimization, *common]
+        if args.lto and (not bank or args.bank_lto):
+            flags += [f"-flto={args.jobs}"]
+            if args.bank_lto: flags += ["-fno-fat-lto-objects"]
         if c:
             flags += ["-std=gnu11"]
+            parts = path.stem.split("_")
+            if ("arm9" in parts) != ("arm7" in parts):
+                flags += [f"-DNDS_STATIC_CPU={0 if 'arm9' in parts else 1}"]
+            elif bank:
+                raise ValueError(f"cannot infer a unique bank CPU: {path.name}")
         else:
             flags += ["-g", "-std=gnu++20", "-frtti", "-fno-exceptions",
                       "-Wno-unused-variable", "-Wno-sign-compare",
@@ -135,7 +157,7 @@ def main():
                 return target
         temp = target.with_suffix(".o.tmp")
         log = obj / f"{name}.log"
-        print(f"compile {name} ({'-O1 serial' if big else '-O2'})", flush=True)
+        print(f"compile {name} ({'-O1 serial' if lean_giant else '-' + args.optimization})", flush=True)
         with log.open("w") as f:
             subprocess.run(command + ["-o", temp.as_posix()], env=env,
                            stdout=f, stderr=subprocess.STDOUT, check=True)
@@ -149,6 +171,9 @@ def main():
     objects = [compile_unit(u) for u in giants]
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         objects += list(pool.map(compile_unit, small))
+    if args.runtime_only:
+        print(f"Compiled {len(objects)} runtime/registry objects in {obj}; no bank objects linked")
+        return
 
     name = "vore-nx-private" if banks else "vore-nx-interpreter"
     elf, nro, nacp = (out / f"{name}.{ext}" for ext in ("elf", "nro", "nacp"))
@@ -158,6 +183,8 @@ def main():
                  f"-specs={(dkp / 'libnx/switch.specs').as_posix()}",
                  f"-Wl,-Map,{(obj / 'runtime.map').as_posix()}",
                  f"-L{(dkp / 'libnx/lib').as_posix()}", "-lnx", "-o", elf.as_posix()]
+    if args.lto: link_args[:0] = [f"-flto={args.jobs}", "-" + args.optimization]
+    if args.bank_lto: link_args[:0] = ["-Werror=lto-type-mismatch"]
     response.write_text("\n".join('"' + a.replace('"', '\\"') + '"' for a in link_args))
     subprocess.run([str(gxx), "@" + response.as_posix()], env=env, check=True)
     subprocess.run([str(dkp / ("tools/bin/nacptool" + suffix)), "--create",

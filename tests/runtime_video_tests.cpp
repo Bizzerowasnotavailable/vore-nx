@@ -118,6 +118,11 @@ int main() {
     check(now == 600ull * 1000000000ull * vore::frame_cycles / vore::arm9_clock);
     check(pacer.advance(now + 1000000000) == 0);
     check(pacer.deadline() == now + 1000000000);
+    check(vore::benchmark_key_mask(1320, false) == 0xFFFu);
+    check(vore::benchmark_key_mask(1320, true) == 0xFF7u);
+    check(vore::benchmark_key_mask(1332, true) == 0xFFFu);
+    check(vore::benchmark_key_mask(1500, true) == 0xFFEu);
+    check(vore::benchmark_key_mask(2700, true) == 0xFEFu);
     std::cout << "Runtime frontend: " << layouts << " layouts, swap-aware touch, pixel/stride guards, "
                  "remapping/config validation and microphone ADC passed\n";
 }

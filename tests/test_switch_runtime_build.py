@@ -52,8 +52,12 @@ class RuntimeBuildTests(unittest.TestCase):
             p.write_text("// synthetic build fixture\n")
         (self.nds / "runner/src/io.cpp").write_text(
             '#include "io.h"\ncase 0x50: g_tsc_conv = g_tsc_x; break;\n')
+        (self.nds / "runner/src/dispatch_timing.h").write_text(
+            '#include <string>\ninline uint64_t tick_now() {\n#if defined(NDS_DISPATCH_TIMING_TSC)\n')
+        (self.nds / "runner/src/dispatch_timing.cpp").write_text(
+            'double measure_ns_per_tick() {\n#if defined(NDS_DISPATCH_TIMING_TSC)\n')
 
-    def run_build(self, fail=False, banks=None):
+    def run_build(self, fail=False, banks=None, extra=()):
         def run(command, **kwargs):
             self.calls.append(command)
             if "--out" in command:
@@ -69,6 +73,7 @@ class RuntimeBuildTests(unittest.TestCase):
                 "--output", str(self.out), "--devkitpro", str(self.dkp), "--jobs", "1"]
         if banks:
             argv += ["--banks", str(banks)]
+        argv += list(extra)
         with patch.object(sys, "argv", argv), patch.object(build, "FRONTEND", self.frontend), \
                 patch.object(build, "REPO", self.root), \
                 patch.object(build.subprocess, "run", side_effect=run), \
@@ -120,6 +125,28 @@ class RuntimeBuildTests(unittest.TestCase):
         response = (self.out / "obj-private/link.rsp").read_text()
         self.assertIn("title_bank_registry.o", response)
         self.assertIn("bank_bis_arm9_main.o", response)
+
+    def test_runtime_only_lto_never_links_or_builds_game_banks(self):
+        banks = self.root / "banks"
+        banks.mkdir(parents=True)
+        (banks / "bis_arm9_main_dispatch.c").write_text("// synthetic dispatch\n")
+        self.run_build(banks=banks, extra=("--runtime-only", "--optimization", "O3", "--lto"))
+        compiles = [c for c in self.calls if "-c" in c]
+        self.assertTrue(all("-O3" in c and "-flto=1" in c for c in compiles))
+        self.assertFalse(any("bank_bis_arm9" in " ".join(c) for c in compiles))
+        self.assertFalse(any(any(a.startswith("@") for a in c) for c in self.calls))
+
+    def test_whole_bank_lto_uses_ir_objects_and_strict_link_type_check(self):
+        banks = self.root / "banks"
+        banks.mkdir(parents=True)
+        (banks / "bis_arm9_main_dispatch.c").write_text("// synthetic dispatch\n")
+        self.run_build(banks=banks, extra=("--optimization", "O3", "--lto", "--bank-lto"))
+        compiles = [c for c in self.calls if "-c" in c]
+        self.assertTrue(all("-flto=1" in c and "-fno-fat-lto-objects" in c for c in compiles))
+        bank = next(c for c in compiles if "bank_bis_arm9_main_dispatch.o.tmp" in " ".join(c))
+        self.assertIn("-DNDS_STATIC_CPU=0", bank)
+        response = (self.out / "obj-private/link.rsp").read_text()
+        self.assertIn("-Werror=lto-type-mismatch", response)
 
 
 if __name__ == "__main__":

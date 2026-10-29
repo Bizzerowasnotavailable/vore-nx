@@ -278,6 +278,46 @@ void log_progress(uint64_t frame) {
          nonblack[0], nonblack[1], varied[0], varied[1]);
 }
 
+void benchmark_checkpoint(uint64_t frame, uint64_t target) {
+    uint64_t hashes[2] = {14695981039346656037ull, 14695981039346656037ull};
+    for (int screen = 0; screen < 2; ++screen) {
+        const auto* pixels = nds_gpu2d_framebuffer(screen);
+        if (!pixels) continue;
+        for (int i = 0; i < 256 * 192; ++i) {
+            hashes[screen] ^= pixels[i];
+            hashes[screen] *= 1099511628211ull;
+        }
+    }
+    vlog("checkpoint frame=%llu target=%llu pixels64=%016llX/%016llX",
+        (unsigned long long)frame, (unsigned long long)target,
+        (unsigned long long)hashes[0], (unsigned long long)hashes[1]);
+}
+
+void log_profile_delta() {
+#if defined(VORE_MINIMAL_PROFILING) && VORE_MINIMAL_PROFILING
+    vlog("profile: fine-grained timing disabled; coarse frame timings and guest counters retained");
+    return;
+#endif
+    static NdsEmuProfile previous{};
+    NdsEmuProfile current{};
+    nds_emu_profile(&current);
+    const auto rounds = current.rounds - previous.rounds;
+    const auto samples = current.sampled_rounds - previous.sampled_rounds;
+    const double scale = samples ? double(rounds) / double(samples) : 0;
+    const double ns_per_tick = nds_dispatch_timing_ns_per_tick();
+    for (int i = 0; i < NDS_EMU_BUCKET_COUNT; ++i) {
+        const auto bucket = static_cast<NdsEmuBucket>(i);
+        const double ticks = double(current.ticks[i] - previous.ticks[i]);
+        const double ms = ticks * ns_per_tick *
+            (nds_emu_bucket_is_exact(bucket) ? 1.0 : scale) / 120000000.0;
+        vlog("profile: %s=%.3fms/frame", nds_emu_bucket_name(bucket), ms);
+    }
+    vlog("profile: rounds=%llu samples=%llu reads=%llu ns_per_tick=%.6f",
+        (unsigned long long)rounds, (unsigned long long)samples,
+        (unsigned long long)(current.reads - previous.reads), ns_per_tick);
+    previous = current;
+}
+
 uint32_t pad_to_key_mask(PadState* pad) {
     return vore::key_mask(g_config, padGetButtons(pad));
 }
@@ -309,6 +349,7 @@ int main(int argc, char** argv) {
     fsdevMountSdmc();
     mkdir(kRoot, 0777);
     log_open();
+    std::remove("sdmc:/switch/vore-nx/benchmark.done");
 
     std::ifstream config_file(kConfigPath);
     std::string config_error;
@@ -471,6 +512,12 @@ int main(int argc, char** argv) {
     vlog("public build: interpreter only");
 #endif
     live_overlay_register_cached_banks();
+    nds_emu_profile_init();
+    if (g_config.benchmark_frames) {
+        nds_io_set_cartridge_save_path(nullptr);
+        vlog("benchmark: %u frames, scenario=%s; live input and save writes disabled",
+            g_config.benchmark_frames, g_config.benchmark_town ? "town" : "idle");
+    }
 
     const uint32_t reset_cpsr = 0x13u | 0x80u | 0x40u;
     scheduler_init();
@@ -544,7 +591,7 @@ int main(int argc, char** argv) {
     u64 sample_run_ticks = 0, sample_present_ticks = 0;
     while (appletMainLoop()) {
         padUpdate(&pad);
-        const u64 buttons = padGetButtons(&pad);
+        const u64 buttons = g_config.benchmark_frames ? 0 : padGetButtons(&pad);
         if (vore::held(buttons, g_config.exit)) {
             vlog("exit requested: mapped hotkey (buttons=0x%llX)",
                  (unsigned long long)buttons);
@@ -562,7 +609,8 @@ int main(int argc, char** argv) {
                 (unsigned long long)vore::microphone::conversions);
             last_mic = vore::microphone::blowing;
         }
-        const uint32_t keys = pad_to_key_mask(&pad);
+        const uint32_t keys = g_config.benchmark_frames ?
+            vore::benchmark_key_mask(frame, g_config.benchmark_town) : pad_to_key_mask(&pad);
         nds_set_key_mask(keys);
         if (keys != last_keys) { vlog("input: keymask=0x%03X", keys); last_keys = keys; }
         HidTouchScreenState touch_state{};
@@ -571,6 +619,7 @@ int main(int argc, char** argv) {
             touch = vore::video::bottom_touch(vore::video::arrange(1280, 720, g_config.video),
                 touch_state.touches[0].x, touch_state.touches[0].y, g_presented_widths[1]);
         }
+        if (g_config.benchmark_frames) { touch = {}; vore::microphone::blowing = false; }
         nds_set_touch(touch.x, touch.y, touch.down);
         if (touch.down != last_touch) {
             vlog("input: touch %s (%u,%u)", touch.down ? "down" : "up", touch.x, touch.y);
@@ -634,6 +683,12 @@ int main(int argc, char** argv) {
                 (unsigned long long)interpreted.instructions[1]);
             sample_frame = frame; sample_start = now;
             sample_run_ticks = 0; sample_present_ticks = 0;
+            if (g_config.profile) log_profile_delta();
+            if (g_config.benchmark_frames) benchmark_checkpoint(frame, target);
+        }
+        if (g_config.benchmark_frames && frame >= g_config.benchmark_frames) {
+            vlog("benchmark: complete");
+            break;
         }
         const u64 sleep_ticks = pacer.advance(now);
         if (g_config.pace && sleep_ticks)
@@ -644,6 +699,8 @@ int main(int argc, char** argv) {
     nds_io_flush_cartridge_save();
     framebufferClose(&g_framebuffer);
     if (g_log) { std::fclose(g_log); g_log = nullptr; }
+    if (g_config.benchmark_frames)
+        write_whole_file("sdmc:/switch/vore-nx/benchmark.done", "done", 4);
     fsdevUnmountAll();
     fsExit();
     return 0;

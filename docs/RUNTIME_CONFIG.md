@@ -71,6 +71,8 @@ still runs slowly: a limiter cannot turn a 10 fps execution path into 60 fps.
 conservative baseline. Performance and renderer correctness must be measured.
 `vore.log` reports actual guest frame throughput, scheduler/presenter costs,
 static dispatch hits, interpreter instructions and microphone conversions.
+Repeatable opt-in benchmark and compiler experiments are described in
+[PERFORMANCE.md](PERFORMANCE.md); benchmark mode is not normal interactive play.
 
 ## Original cartridge / flashcart / emulator saves
 

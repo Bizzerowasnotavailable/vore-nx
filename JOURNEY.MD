@@ -631,3 +631,127 @@ widescreen, remappable controls, emulated microphone, screen-swap hotkey.
   ELF was packaged separately as `vore-nx-private-priorities.nro` rather than
   stopping that session to replace it. Final pacing/touch-boundary changes still
   need a fresh Eden launch after packaging. No release NRO was replaced.
+
+## 2026-10-29 - Full-speed investigation (in progress)
+
+The next target is original-rate execution, not skipped logic or a presentation
+counter pretending slow guest execution is full speed.
+
+- Added bounded, deterministic benchmark runs: fixed guest-frame targets,
+  live controls disabled, cartridge save writes detached after loading, and
+  per-120-frame hashes of both native LCD buffers. The `town` scenario adds
+  frame-indexed Start/A/directional input; idle is the default benchmark path.
+  Normal play has no frame limit or scripted input.
+- The private interactive Eden session was exited through the mapped hotkey,
+  preserving save flush; its INI/save/log were backed up before benchmarking.
+  Benchmarks create their own Eden process and signal completion through an
+  event-watched marker, rather than requiring manual sleep-and-poll tool calls.
+- Added `compare_switch_bench.py`: refuses incomplete/fatal runs, missing
+  checkpoints and mismatched cycle targets, and compares both LCD pixel hashes
+  before summarizing post-warm-up performance. Hash equality is not a claim
+  of a full byte-by-byte dump comparison or a complete game playthrough.
+- Confirmed that profiling uses `std::chrono` on the original AArch64 path.
+  Added a Switch-only system-counter path and frequency-based ns calibration,
+  staged by the native-Python builder without editing prerequisite checkouts.
+- An initial baseline overlapped compilation and is **not** the controlled
+  comparison. A separate idle-host baseline vs. the counter build matched all
+  **10/10** LCD-hash checkpoints over 1,200 guest frames. For intervals ending
+  at frame 600 onward, median guest rates were **16.97 vs. 17.45 fps** (~2.8%).
+  This is not a material/full-speed improvement; the hypothesis did not explain
+  the main bottleneck.
+- The profile instead puts most time in static guest CPU execution. One
+  counter-build title interval attributes ~30.17 ms to ARM9, ~13.36 ms ARM7,
+  ~4.43 ms scheduler bookkeeping, and ~4.27 ms presentation per guest frame.
+  Sampled buckets are estimates, not exact additive cycle measurements.
+- Testing compiler alternatives next: Clang `-O2` for the private AArch64 bank
+  set (instead of giant GCC units at `-O1`) and GCC `-O3`/LTO for the runtime.
+  No fast-math or relaxed guest timing is enabled. Object inventory/architecture,
+  source digests and header-key consistency are checked before experimental
+  LLVM-bank linking. Successful compilation alone is not a speed/parity result.
+
+### Controlled compiler results so far
+
+All runs below use the same 1,200-frame idle timeline, same loaded SAV/firmware
+identity, two software-renderer workers, no pacing, and intervals ending at
+frame 600 onward. No heavy compilation overlapped these controlled runs.
+
+| Variant | Median guest fps | Median scheduler cost | LCD hash checkpoints |
+|---|---:|---:|---:|
+| Original GCC banks/runtime | 16.97 | 54.605 ms | reference |
+| Hardware-counter profiling | 17.45 | 53.035 ms | 10/10 match |
+| GCC banks + `-O3`/LTO runtime | 19.755 | 46.365 ms | 10/10 match |
+| Clang `-O2` banks + ordinary runtime | 16.575 | 56.145 ms | 10/10 match |
+| `lto-gcc-2` / `lto-gcc-3` control repeats | 19.575 / 19.250 | 46.820 / 48.900 ms | 10/10 match |
+| **Full whole-program LTO + `-O3` + static CPU + minimal profiling** | **21.460** | **42.365 ms** | **10/10 match** |
+
+Runtime LTO gives a measured **16.4%** median increase on this timeline. Clang
+alone regresses ~2.3%, despite reducing NRO size from 136,648,901 to 104,312,888
+bytes. Neither is full speed; do not advertise a single easy ~50/60 fps boot
+interval as stable game performance.
+
+Found another omitted upstream optimization: the Switch compile scripts lacked
+per-source **`NDS_STATIC_CPU`**, which the upstream runner CMake sets for ARM9
+and ARM7. This folds repeated CPU selector checks in instruction/cycle/memory
+helpers. The public builders now infer a unique CPU from bank names, reject
+ambiguous names, and record/check specialization in experimental object metadata.
+Testing that combination with LTO and optional minimal host profiling next.
+
+CPU-specialized Clang + runtime LTO and its minimal-profiling variant also
+completed the 1,200-frame timeline with matching LCD hashes. They did not beat
+the previous best on their measured runs; presenter costs also rose from ~4.3
+to ~6.6 ms/frame, so those timings are not used to claim a specialization
+speedup across different host conditions. Optional minimal profiling removes
+only host-time instrumentation; actual guest dispatch/instruction counters,
+cycle checks, rendering and coarse frame timings remain enabled.
+
+The next, more expensive experiment is now running: **GCC `-O3` whole-program
+LTO across both runtime and all 149 bank translation units**, with per-CPU
+specialization, minimal profiling, no fast-math and strict LTO type-mismatch
+errors. Non-fat IR objects avoid doing native code generation twice. This
+build is private/resumable and not yet a validated result. No full-speed claim.
+Interactive INI settings were restored after the completed benchmarks; the
+remaining build does not run the game or write cartridge saves.
+
+### Whole-program LTO result and where the remaining gap actually is
+
+The whole-program build finished: 202 non-fat IR objects (149 bank units plus
+runtime), linked with `-O3`, per-CPU specialization, minimal host profiling and
+`-Werror=lto-type-mismatch`. The link takes about 50 minutes and produces a
+105,369,656-byte private NRO. It was re-run on the identical 1,200-frame idle
+timeline and matched **10/10** LCD-hash checkpoints and every cycle target
+against the reference run, so the extra speed is not a different workload.
+
+Full LTO measures **+26.4%** over the original build (16.97 → 21.46 fps) and
+**+9.6%** over runtime-only LTO (19.58 → 21.46). The two `lto-gcc` control
+repeats (19.58 / 19.25) bound host noise well below the full-LTO delta, so the
+gain is real. It still leaves the NRO at roughly **36% of DS realtime in Eden**.
+
+Interactive check of that NRO in Eden: boots through the startup logos and
+castle, title screen, save-file selection, and the Toad Town scene renders with
+the mapped Start/A input working (screenshots kept privately). The imported SAV
+loads byte-identical. Observed guest rate varies with scene from ~13.5 fps in
+the heaviest cutscene frame to ~26.5 fps in light ones, consistent with the
+benchmark median.
+
+The same guest code and the same 51-bank set run in the native desktop runner
+at **161.7M ARM9 cycles/s while booting** (2.4x DS realtime) and **74.1 fps
+interactive with framebuffer readback every frame (124% of DS realtime)**. Eden
+sustains about **24M ARM9 cycles/s** on the same build, i.e. 3.5x slower than
+the native interactive rate and 6.7x slower than the native boot rate, and it
+spends that time inside Dynarmic translating the generated AArch64 rather than
+inside guest logic. Per-frame logging agrees: ARM9 + ARM7 execution dominates,
+and every non-CPU bucket together is under a quarter of the frame.
+
+So the measured gap is the second emulation layer, not the recompiled game.
+Closing it inside Eden would require discarding roughly two thirds of the guest
+work, which is exactly the shortcut this project refuses. The honest next
+measurement is real Switch hardware; the guest side is already at or above DS
+realtime natively, and no further compiler flag, counter patch or profiling
+trim is going to make an x86-64 host execute AArch64 at native speed.
+
+One thing that did **not** get verified: the private `bis.sav` in the test copy
+is a valid but empty BIS save (header plus a few bytes, no progress data), so
+the in-game save-write → reload round-trip is still untested. The game shows
+"NEW FILE" for both slots with it, and no cartridge write happened during the
+interactive session. Spoofing a saved game is not an option; that needs either
+real progress from playing to a save point or a user-supplied save.

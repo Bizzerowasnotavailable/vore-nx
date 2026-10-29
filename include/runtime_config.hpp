@@ -39,6 +39,9 @@ struct RuntimeConfig {
     uint64_t exit = button("stick_l") | button("stick_r");
     bool pace = true;
     unsigned renderer_threads = 0;
+    unsigned benchmark_frames = 0;
+    bool benchmark_town = false;
+    bool profile = false;
     std::string save_file = "rom.sav";
 };
 inline std::string trim(const std::string& s) {
@@ -67,10 +70,20 @@ inline bool parse_config(std::istream& input, RuntimeConfig& config, std::string
             ok = value == "native" || value == "stretch" || value == "adaptive";
             if (ok) next.video.aspect = value == "native" ? video::Aspect::Native :
                 value == "stretch" ? video::Aspect::Stretch : video::Aspect::Adaptive;
-        } else if (key == "swapped" || key == "pace") {
+        } else if (key == "swapped" || key == "pace" || key == "profile") {
             ok = value == "true" || value == "false";
             if (ok && key == "swapped") next.video.swapped = value == "true";
             if (ok && key == "pace") next.pace = value == "true";
+            if (ok && key == "profile") next.profile = value == "true";
+        } else if (key == "benchmark_scenario") {
+            ok = value == "idle" || value == "town";
+            if (ok) next.benchmark_town = value == "town";
+        } else if (key == "benchmark_frames") {
+            ok = !value.empty() && value.size() <= 4 && value.find_first_not_of("0123456789") == std::string::npos;
+            unsigned count = 0;
+            if (ok) for (char c : value) count = count * 10 + static_cast<unsigned>(c - '0');
+            ok = ok && count <= 3600;
+            if (ok) next.benchmark_frames = count;
         } else if (key == "renderer_threads") {
             ok = value == "0" || value == "1" || value == "2";
             if (ok) next.renderer_threads = static_cast<unsigned>(value[0] - '0');
@@ -97,5 +110,17 @@ inline uint32_t key_mask(const RuntimeConfig& config, uint64_t buttons) {
     uint32_t mask = 0xFFFu;
     for (unsigned i = 0; i < 12; ++i) if (held(buttons, config.keys[i])) mask &= ~(1u << i);
     return mask;
+}
+// Deterministic regression input. Not used in normal play, and never skips
+// guest work. Both compiler variants receive the same frame-indexed buttons.
+inline uint32_t benchmark_key_mask(uint64_t frame, bool town) {
+    if (!town) return 0xFFFu;
+    if (frame >= 1320 && frame < 1332) return 0xFF7u; // Start
+    for (uint64_t start : {1500u, 1740u, 1980u, 2220u, 2460u})
+        if (frame >= start && frame < start + 12) return 0xFFEu; // A
+    if (frame >= 2700 && frame < 2880) return 0xFEFu; // Right
+    if (frame >= 3000 && frame < 3180) return 0xF7Fu; // Down
+    if (frame >= 3300 && frame < 3480) return 0xFBFu; // Up
+    return 0xFFFu;
 }
 } // namespace vore
