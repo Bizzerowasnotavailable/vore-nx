@@ -372,3 +372,90 @@ six jobs rather than eight.
   convert the remaining interpreted stubs, then either rebuild the private
   AArch64 NRO with this bank set for the ROM owner or pursue an interpreter-only
   Switch runtime that ships only BSD-licensed FreeBIOS banks.
+
+## 2026-10-29 - Switch runtime: frames presented in Eden
+
+The AArch64 platform layer now runs far enough to present frames under Eden.
+This is a runtime milestone, not a playability claim: the presented frames are
+black because the guest has not written VRAM during early boot, and the private
+51-bank build has not been verified yet.
+
+### Why the earlier private NRO never presented
+
+That NRO was alive (one core at 100%, about 4.9 GB resident) but stayed on
+Eden's "Launching..." screen for minutes. Two faults were found and fixed; only
+the first is proven from the logs, and neither is proven to be the sole cause of
+the missing present:
+
+1. **The save flush could never succeed.** `nds_battery_save_write_atomic()`
+   writes a `.tmp` file and renames it over the save. Horizon OS refuses to
+   rename onto an existing file, so every flush failed, the cartridge backup
+   stayed dirty, and the IO layer retried the whole 8 KiB write on every
+   hardware frame. Eden's log recorded about 800 `RenameFile ... already exists`
+   errors in four seconds, and a stale `bis.sav.tmp` was left on the SD card.
+   The fallback now removes the destination and retries the rename once; on
+   POSIX the first atomic rename still succeeds, so the fast path is unchanged.
+   After the fix the temporary file disappears and the save is written once.
+2. **There was no way to see where boot stopped.** A presenting applet has no
+   console and Eden does not surface stdout, so a hang inside `scheduler_run()`
+   was indistinguishable from a slow Tier-3 boot. The runtime now writes a
+   timestamped milestone log to `sdmc:/switch/vore-nx/vore.log`: ROM read,
+   firmware, bank registration, direct boot, first present, every 60th frame,
+   and the ARM9/ARM7 PCs plus cycle counters whenever one DS frame takes longer
+   than a second of wall time.
+
+A third presentation defect was found by inspection while adding that logging:
+`nds_gpu2d_framebuffer()` returns XRGB (`0xFFRRGGBB`), but libnx's default window
+is `RGBA_8888`, whose in-memory bytes must be R,G,B,A. The original conversion
+emitted BGRA, so a successful present would have shown every screen with red and
+blue exchanged. `pack_rgba()` now emits `0xAABBGGRR`, and the framebuffer-begin
+failure check compares the returned pointer instead of a `Result`.
+
+### Measured, public (bank-free) build
+
+Interpreter-only, so this isolates the platform layer from the generated banks:
+
+```
+[   0.105] rom read: 134217728 bytes
+[   0.108] game code CLJP accepted
+[   0.111] firmware generated: 131072 bytes
+[   2.075] direct boot: starting
+[   2.083] direct boot: done, first frame target 1120590
+[   2.458] present: first frame drawn (1280x720)
+[  37.320] frame 600: scheduler_run target 673474590
+```
+
+The first frame is presented 2.4 s after launch and the applet loop keeps
+advancing (600 DS frames in 37 s, roughly 6 fps with every cartridge instruction
+interpreted). Eden reports "0 FPS" in its own status bar, but the log and the
+changing frame targets show the DS machine advancing; Eden's counter reflects
+its presentation timing, not the guest's.
+
+### AArch64 build cost for the 51-bank set
+
+The bank sources are unchanged (210 MB of generated C in 200 files), but the
+AArch64 toolchain behaves very differently from the desktop compiler:
+
+- GCC 16 at `-O2` had not finished a 30 MB bank unit after **13.5 minutes** of
+  CPU and about 3.5 GB resident, with four jobs threatening to exhaust 16 GB.
+- At `-O1` the same class of unit (24.5 MB) compiles in **4m55s** and produces a
+  55 MB object. Dispatch code is straight-line emulated instructions, so `-O1`
+  gives up little.
+- `build.sh` therefore compiles the four units above 12 MB strictly one at a
+  time at `-O1`, then the remaining 145 small units in parallel at `-O2`, and
+  keeps a fixed job cap.
+
+The private rebuild was stopped deliberately at 17 of 149 bank translation
+units to keep the machine usable for the next step; objects already built are
+reused on resume.
+
+### Still open
+
+- The private 51-bank NRO is **not rebuilt or verified**. Whether static banks
+  run correctly on AArch64 (live-byte validation, self-modifying-code fallback)
+  is unknown; the desktop differential test covers the x86-64 runner only.
+- No non-black DS frame has been confirmed in Eden. Title-screen rendering is
+  the next checkpoint.
+- Audio output, touch input and saving from the Switch UI remain unimplemented.
+
+

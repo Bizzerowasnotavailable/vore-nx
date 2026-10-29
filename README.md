@@ -24,12 +24,13 @@ include the installer NRO and source package. Read the limitations before use.
 | Static-code share at runtime | Desktop session: 92.5% of ARM9 dispatches and 100% of ARM7 dispatches resolve to recompiled code instead of the interpreter (private measurement) |
 | Static-bank correctness | Differential test, banks vs. forced Tier-3 interpretation: 6/6 framebuffer checkpoints byte-identical (private measurement) |
 | Interactive desktop frontend | `tools/private/play_tk.py` (private tooling; needs a local runner build) |
-| Switch game execution | Not implemented |
+| Switch runtime (AArch64) | Boots the DS machine, verifies the ROM, draws both screens into the Switch framebuffer; interpreter-only build verified in Eden (first frame at 2.4 s, ~6 fps, frames advancing) |
+| Switch game execution | Runtime runs and presents, but no non-black DS frame has been confirmed and the 51-bank private build is not yet verified |
 | Mario/Luigi and Bowser combat | Not verified |
 | Giant battles, touch/microphone | Not verified |
-| Audio and save/load | Not implemented |
+| Audio and save/load (Switch) | Save file is written via the runner path; audio and UI saving not implemented |
 | Ending / full playthrough | Not tested |
-| Real Switch / Eden gameplay validation | Not tested; compilation is not runtime validation |
+| Real Switch / Eden gameplay validation | Eden load/present path verified for the interpreter build; gameplay not validated |
 
 Only **European revision 0 (`CLJP`)** is currently accepted for extraction:
 
