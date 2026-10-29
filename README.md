@@ -3,9 +3,12 @@
 An early Nintendo Switch static-recompilation project for **Mario & Luigi:
 Bowser's Inside Story (Nintendo DS)**.
 
-**Status: ROM-preparation milestone, NOT PLAYABLE.** The included NRO verifies
-and extracts a user-supplied ROM. It does not yet execute either DS CPU or boot
-the game. This is not a completed port or an emulator disguised as one.
+**Status: Switch NRO = ROM preparation, NOT PLAYABLE on Switch.** The included
+NRO verifies and extracts a user-supplied ROM. It does not yet execute either DS
+CPU or boot the game. Separately, a **private, locally built desktop runner** has
+booted this ROM to the title screen, save-file screen and Toad Town exploration
+with scripted input; that runner and its generated banks are not part of any
+release. This is not a completed port or an emulator disguised as one.
 
 [Development downloads](https://github.com/Bizzerowasnotavailable/vore-nx/releases)
 include the installer NRO and source package. Read the limitations before use.
@@ -16,14 +19,16 @@ include the installer NRO and source package. Read the limitations before use.
 |---|---|
 | Asset-free Switch NRO | Cross-compiled with devkitA64/libnx |
 | Exact-ROM verification and private extraction | Implemented; test results in `JOURNEY.MD` |
-| Private main-code AOT banks | 2,011 discovered functions emitted; six C units compile to AArch64 objects; not runtime-integrated |
-| Overlays and indirect code coverage | 141 ARM9 overlays untranslated; indirect-target gaps remain |
-| Game title screen / new game | Not implemented |
-| Mario/Luigi and Bowser exploration/combat | Not implemented |
-| Giant battles, touch/microphone | Not implemented |
+| Private static banks (desktop) | 10 content-validated banks from a Tier-3 coverage session: main ARM9/ARM7 images, 6 ARM9 overlays, 2 relocated ARM7 aliases (private build only) |
+| Private desktop ndsrecomp runtime | Boots to title screen, save-file screen, Toad Town exploration and in-game dialogue; scripted Start/A/D-pad input moves Mario (private build only) |
+| Static-code share at runtime | Desktop session: 92% of ARM9 dispatches and 83% of ARM7 dispatches resolve to recompiled code instead of the interpreter (private measurement) |
+| Interactive desktop frontend | `tools/private/play_tk.py` (private tooling; needs a local runner build) |
+| Switch game execution | Not implemented |
+| Mario/Luigi and Bowser combat | Not verified |
+| Giant battles, touch/microphone | Not verified |
 | Audio and save/load | Not implemented |
-| Ending / full playthrough | Not tested; no gameplay currently available |
-| Real Switch / Eden runtime validation | See `JOURNEY.MD`; compilation is not runtime validation |
+| Ending / full playthrough | Not tested |
+| Real Switch / Eden gameplay validation | Not tested; compilation is not runtime validation |
 
 Only **European revision 0 (`CLJP`)** is currently accepted for extraction:
 
@@ -50,10 +55,13 @@ the original ROM: extraction does not preserve every card sector. A cancelled
 operation cleans up its own newly created files; after a power loss, move an
 orphaned `.partial` directory aside before retrying.
 
-**There is no "play" option yet.** Do not redistribute your extracted files or
-translated banks. Owning a cartridge and keeping assets external is not a
-universal legal guarantee; follow the laws applicable to you. No encryption
-keys, download instructions, or Nintendo security bypasses are provided.
+**There is no "play" option yet.** The private desktop runtime observed during
+development is not shipped and cannot be built from this repository alone: it
+needs a locally built ndsrecomp runner plus private banks generated from your own
+ROM. Do not redistribute your extracted files or translated banks. Owning a
+cartridge and keeping assets external is not a universal legal guarantee; follow
+the laws applicable to you. No encryption keys, download instructions, or
+Nintendo security bypasses are provided.
 
 ## Build
 
