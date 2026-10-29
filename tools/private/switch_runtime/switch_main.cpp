@@ -12,9 +12,12 @@
 #include <switch.h>
 
 #include <cstdarg>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <sys/stat.h>
 #include <string>
 #include <vector>
 
@@ -41,6 +44,11 @@
 #include "freebios_images.h"
 #include "sha1.h"
 #include "runtime_video.hpp"
+#include "runtime_config.hpp"
+#include "runtime_microphone.hpp"
+#include "dispatch_stats.h"
+#include "tier3.h"
+#include "runtime_timing.hpp"
 
 extern "C" {
 extern const DispatchEntry g_dispatch_freebios_arm9[];
@@ -53,13 +61,16 @@ namespace {
 
 constexpr const char* kRoot = "sdmc:/switch/vore-nx";
 constexpr const char* kRomPath = "sdmc:/switch/vore-nx/rom.nds";
-constexpr const char* kSavePath = "sdmc:/switch/vore-nx/bis.sav";
+constexpr const char* kConfigPath = "sdmc:/switch/vore-nx/runtime.ini";
 constexpr const char* kMacPath = "sdmc:/switch/vore-nx/mac.bin";
 constexpr const char* kFirmwarePath = "sdmc:/switch/vore-nx/firmware.bin";
 constexpr const char* kLogPath = "sdmc:/switch/vore-nx/vore.log";
 
 // ARM9 core clock 67.027964 MHz, 59.826 Hz refresh: one frame of DS time.
-constexpr uint64_t kArm9CyclesPerFrame = 1120590;
+constexpr uint64_t kArm9CyclesPerFrame = vore::frame_cycles;
+vore::RuntimeConfig g_config;
+static_assert(HidNpadButton_ZR == (1ull << 9) && HidNpadButton_Down == (1ull << 15),
+              "portable controller bits must match libnx");
 
 // ---- diagnostics ---------------------------------------------------------
 // Once the applet starts presenting there is no visible console, and Eden does
@@ -199,6 +210,7 @@ RomInfo check_rom(const std::vector<uint8_t>& rom) {
 
 // ---- presentation -------------------------------------------------------
 Framebuffer g_framebuffer{};
+uint16_t g_presented_widths[2] = {256, 256};
 
 bool video_init() {
     Result rc = framebufferCreate(&g_framebuffer, nwindowGetDefault(),
@@ -230,8 +242,14 @@ void present() {
         }
         return;
     }
+    uint16_t widths[2] = {256, 256};
+    const uint32_t* lcd[2];
+    for (int i = 0; i < 2; ++i)
+        lcd[i] = g_config.video.aspect == vore::video::Aspect::Adaptive ?
+            nds_gpu2d_adaptive_framebuffer(i, &widths[i]) : nds_gpu2d_framebuffer(i);
     const bool drawn = vore::video::draw(base, stride_bytes, 1280, 720,
-        nds_gpu2d_framebuffer(0), nds_gpu2d_framebuffer(1));
+        lcd[0], lcd[1], g_config.video, widths[0], widths[1]);
+    g_presented_widths[0] = widths[0]; g_presented_widths[1] = widths[1];
     framebufferEnd(&g_framebuffer);
     if (drawn && !reported_success) {
         reported_success = true;
@@ -261,19 +279,7 @@ void log_progress(uint64_t frame) {
 }
 
 uint32_t pad_to_key_mask(PadState* pad) {
-    uint32_t mask = 0x3FFu;  // all buttons released (active-low)
-    const u64 held = padGetButtons(pad);
-    if (held & HidNpadButton_A) mask &= ~(1u << 0);
-    if (held & HidNpadButton_B) mask &= ~(1u << 1);
-    if (held & HidNpadButton_Minus) mask &= ~(1u << 2);
-    if (held & HidNpadButton_Plus) mask &= ~(1u << 3);
-    if (held & HidNpadButton_Right) mask &= ~(1u << 4);
-    if (held & HidNpadButton_Left) mask &= ~(1u << 5);
-    if (held & HidNpadButton_Up) mask &= ~(1u << 6);
-    if (held & HidNpadButton_Down) mask &= ~(1u << 7);
-    if (held & HidNpadButton_R) mask &= ~(1u << 8);
-    if (held & HidNpadButton_L) mask &= ~(1u << 9);
-    return mask;
+    return vore::key_mask(g_config, padGetButtons(pad));
 }
 
 void flush_audio() {
@@ -301,7 +307,72 @@ int main(int argc, char** argv) {
         return 1;
     }
     fsdevMountSdmc();
+    mkdir(kRoot, 0777);
     log_open();
+
+    std::ifstream config_file(kConfigPath);
+    std::string config_error;
+    if (config_file && !vore::parse_config(config_file, g_config, config_error)) {
+        vlog("fatal: %s", config_error.c_str());
+        consoleExit(nullptr);
+        return 1;
+    }
+    std::string save_path = std::string(kRoot) + "/" + g_config.save_file;
+    // Retain the old development filename only when no explicit configuration
+    // exists and the new ROM-matching default is absent. Never copy over it.
+    if (!config_file.is_open()) {
+        FILE* candidate = std::fopen(save_path.c_str(), "rb");
+        if (candidate) std::fclose(candidate);
+        else {
+            std::string legacy = std::string(kRoot) + "/bis.sav";
+            candidate = std::fopen(legacy.c_str(), "rb");
+            if (candidate) { std::fclose(candidate); save_path = legacy; }
+        }
+    }
+    std::string save_error;
+    FILE* save = std::fopen(save_path.c_str(), "rb");
+    const int save_open_error = errno;
+    const bool had_save = save != nullptr;
+    if (save) {
+        const bool seek_ok = std::fseek(save, 0, SEEK_END) == 0;
+        const long size = seek_ok ? std::ftell(save) : -1;
+        std::fclose(save);
+        if (size != 8192) {
+            vlog("fatal: save must be raw 8192 bytes, found %ld; original untouched", size);
+            consoleExit(nullptr);
+            return 1;
+        }
+        // Preserve the imported original before the first possible game write.
+        const std::string backup = save_path + ".import-backup";
+        FILE* existing = std::fopen(backup.c_str(), "rb");
+        if (existing) {
+            const bool backup_ok = std::fseek(existing, 0, SEEK_END) == 0 && std::ftell(existing) == 8192;
+            std::fclose(existing);
+            if (!backup_ok) {
+                vlog("fatal: import backup is incomplete; preserve it and repair manually");
+                consoleExit(nullptr);
+                return 1;
+            }
+        } else {
+            const auto bytes = read_whole_file(save_path.c_str(), &save_error);
+            FILE* out = bytes.size() == 8192 ? std::fopen(backup.c_str(), "wbx") : nullptr;
+            bool copied = out && std::fwrite(bytes.data(), 1, bytes.size(), out) == bytes.size();
+            if (out && std::fclose(out) != 0) copied = false;
+            if (!copied) {
+                vlog("fatal: cannot back up imported save; refusing to boot");
+                consoleExit(nullptr);
+                return 1;
+            }
+        }
+        vlog("save: raw 8192-byte image accepted, import backup preserved");
+    } else {
+        if (save_open_error != ENOENT) {
+            vlog("fatal: existing save cannot be opened (errno=%d); refusing to run", save_open_error);
+            consoleExit(nullptr);
+            return 1;
+        }
+        vlog("save: new raw EEPROM image will be created");
+    }
 
     std::string error;
     std::vector<uint8_t> rom = read_whole_file(kRomPath, &error);
@@ -345,6 +416,11 @@ int main(int argc, char** argv) {
     bus_load_arm9_bios(a9, 4096);
     bus_load_arm7_bios(a7, 16384);
 
+    // Loading occurs inside nds_io_load_cartridge, not in the path setter.
+    // Setting this AFTER cartridge initialization silently ignored every save.
+    nds_io_configure_cartridge_save({NdsCartridgeSaveType::Eeprom, 8192});
+    nds_io_set_cartridge_save_path(save_path.c_str());
+
     if (!nds_io_load_cartridge(rom.data(), static_cast<uint32_t>(rom.size()),
                                a7, 16384)) {
         consoleInit(nullptr);
@@ -352,7 +428,21 @@ int main(int argc, char** argv) {
         consoleExit(nullptr);
         return 1;
     }
-    nds_io_set_cartridge_save_path(kSavePath);
+    const uint8_t* loaded_save = nullptr;
+    uint32_t loaded_size = 0;
+    bool save_dirty = false;
+    if (nds_io_cartridge_save_snapshot(&loaded_save, &loaded_size, &save_dirty)) {
+        vlog("save: cartridge backing size=%u", loaded_size);
+        if (had_save) {
+            const auto expected = read_whole_file(save_path.c_str(), &save_error);
+            if (expected.size() != loaded_size || std::memcmp(expected.data(), loaded_save, loaded_size) != 0) {
+                vlog("fatal: loaded SRAM differs from imported save; refusing to run");
+                consoleExit(nullptr);
+                return 1;
+            }
+            vlog("save: loaded SRAM byte-identical to raw file");
+        }
+    }
 
     runtime_init(nullptr);
     live_overlay_runtime_reset();
@@ -423,9 +513,18 @@ int main(int argc, char** argv) {
     }
     vlog("direct boot: done, first frame target %llu", (unsigned long long)kArm9CyclesPerFrame);
 
-    nds_gpu3d_set_threaded(false);
-    nds_gpu2d_set_threaded(false, 1);
+    nds_gpu3d_set_threaded(g_config.renderer_threads != 0);
+    nds_gpu2d_set_threaded(g_config.renderer_threads != 0,
+                          g_config.renderer_threads ? g_config.renderer_threads : 1);
     nds_gpu2d_set_adaptive_workers(0);
+    if (g_config.video.aspect == vore::video::Aspect::Adaptive) {
+        const bool wide = nds_gpu3d_set_output_width(342);
+        vlog("experimental adaptive 3D width=342 enabled=%d; BIS 2D camera unpatched", wide);
+    }
+    vlog("layout: %s aspect=%d swapped=%d pace=%d renderer_threads=%u",
+        g_config.video.orientation == vore::video::Orientation::Horizontal ? "horizontal" : "vertical",
+        static_cast<int>(g_config.video.aspect), g_config.video.swapped, g_config.pace,
+        g_config.renderer_threads);
 
     if (!video_init()) return 1;
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
@@ -435,16 +534,33 @@ int main(int argc, char** argv) {
 
     uint64_t target = 0;
     uint64_t frame = 0;
-    uint32_t last_keys = 0x3FFu;
+    uint32_t last_keys = 0xFFFu;
     bool last_touch = false;
+    bool last_swap = false, last_mic = false;
+    const u64 tick_frequency = armGetSystemTickFreq();
+    u64 sample_start = armGetSystemTick();
+    vore::FramePacer pacer(tick_frequency, sample_start);
+    uint64_t sample_frame = 0;
+    u64 sample_run_ticks = 0, sample_present_ticks = 0;
     while (appletMainLoop()) {
         padUpdate(&pad);
         const u64 buttons = padGetButtons(&pad);
-        if ((buttons & (HidNpadButton_StickL | HidNpadButton_StickR)) ==
-            (HidNpadButton_StickL | HidNpadButton_StickR)) {
-            vlog("exit requested: both stick clicks (buttons=0x%llX)",
+        if (vore::held(buttons, g_config.exit)) {
+            vlog("exit requested: mapped hotkey (buttons=0x%llX)",
                  (unsigned long long)buttons);
             break;
+        }
+        const bool swap = vore::held(buttons, g_config.swap);
+        if (swap && !last_swap) {
+            g_config.video.swapped = !g_config.video.swapped;
+            vlog("input: screens swapped=%d", g_config.video.swapped);
+        }
+        last_swap = swap;
+        vore::microphone::blowing = vore::held(buttons, g_config.mic);
+        if (vore::microphone::blowing != last_mic) {
+            vlog("input: microphone blowing=%d adc_conversions=%llu", vore::microphone::blowing,
+                (unsigned long long)vore::microphone::conversions);
+            last_mic = vore::microphone::blowing;
         }
         const uint32_t keys = pad_to_key_mask(&pad);
         nds_set_key_mask(keys);
@@ -452,8 +568,8 @@ int main(int argc, char** argv) {
         HidTouchScreenState touch_state{};
         vore::video::Touch touch;
         if (hidGetTouchScreenStates(&touch_state, 1) > 0 && touch_state.count > 0) {
-            touch = vore::video::bottom_touch(vore::video::stacked_layout(1280, 720),
-                touch_state.touches[0].x, touch_state.touches[0].y);
+            touch = vore::video::bottom_touch(vore::video::arrange(1280, 720, g_config.video),
+                touch_state.touches[0].x, touch_state.touches[0].y, g_presented_widths[1]);
         }
         nds_set_touch(touch.x, touch.y, touch.down);
         if (touch.down != last_touch) {
@@ -467,6 +583,7 @@ int main(int argc, char** argv) {
         }
         const u64 run_start = armGetSystemTick();
         const SchedResult result = scheduler_run(target);
+        sample_run_ticks += armGetSystemTick() - run_start;
         if (result.cycles[0] < target) {
             vlog("fatal: scheduler stopped before target=%llu cyc9=%llu "
                  "halt9=%d (%s) halt7=%d (%s)",
@@ -492,10 +609,35 @@ int main(int argc, char** argv) {
                  scheduler_cpu_state(1).R[15],
                  (unsigned long long)scheduler_cpu_cycles(1));
         }
+        const u64 present_start = armGetSystemTick();
         present();
+        sample_present_ticks += armGetSystemTick() - present_start;
         if ((frame % 60u) == 0u) log_progress(frame);
         flush_audio();
         ++frame;
+        const u64 now = armGetSystemTick();
+        if (frame % 120 == 0) {
+            const double seconds = double(now - sample_start) / double(tick_frequency);
+            const double frames = double(frame - sample_frame);
+            const auto interpreted = tier3_stats();
+            vlog("performance: %.2f guest frames/s scheduler=%.2fms present=%.2fms mic_adc=%llu",
+                double(frame - sample_frame) / seconds,
+                1000.0 * double(sample_run_ticks) / double(tick_frequency) / frames,
+                1000.0 * double(sample_present_ticks) / double(tick_frequency) / frames,
+                (unsigned long long)vore::microphone::conversions);
+            vlog("dispatch: hits9=%llu absent9=%llu hits7=%llu absent7=%llu tier3_insn=%llu/%llu",
+                (unsigned long long)g_nds_dispatch_stats[0].cache_hit,
+                (unsigned long long)g_nds_dispatch_stats[0].cache_hit_absent,
+                (unsigned long long)g_nds_dispatch_stats[1].cache_hit,
+                (unsigned long long)g_nds_dispatch_stats[1].cache_hit_absent,
+                (unsigned long long)interpreted.instructions[0],
+                (unsigned long long)interpreted.instructions[1]);
+            sample_frame = frame; sample_start = now;
+            sample_run_ticks = 0; sample_present_ticks = 0;
+        }
+        const u64 sleep_ticks = pacer.advance(now);
+        if (g_config.pace && sleep_ticks)
+            svcSleepThread(static_cast<int64_t>(sleep_ticks * 1000000000ull / tick_frequency));
     }
     vlog("applet loop exited after %llu frames", (unsigned long long)frame);
 

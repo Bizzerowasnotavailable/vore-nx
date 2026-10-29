@@ -25,12 +25,17 @@ include the installer NRO and source package. Read the limitations before use.
 | Static-bank correctness | Differential test, banks vs. forced Tier-3 interpretation: 6/6 framebuffer checkpoints byte-identical (private measurement) |
 | Interactive desktop frontend | `tools/private/play_tk.py` (private tooling; needs a local runner build) |
 | Switch runtime (AArch64) | Experimental interpreter build visibly renders both LCDs in Eden: startup logos, animated title, save-file selection and opening Toad Town scene; actual CPU/vblank progress logged |
-| Switch game execution | Start/A input reaches New File / Start and the opening scene in Eden; interpreter build is slow (~1–5 fps in visual samples); 51-bank private build not yet verified |
+| Switch game execution | Private 51-bank AArch64 build now boots and renders in Eden; measured scenes about 10–18 guest fps with threaded rendering, not full speed |
+| Display layout / screen swap | Horizontal 4:3 LCDs by default; configurable vertical layout; ZR screen swap visibly verified in Eden; touch follows the bottom LCD |
+| Controls | File-based remapping of all 12 DS buttons and hotkeys; fixed X/Y previously being held accidentally |
+| Standard SAV files | Raw 8192-byte EEPROM loading fixed and byte-compared to guest SRAM; non-overwriting padded/mirrored SAV import tool; actual progress save/load round-trip pending |
+| Microphone | Hold ZL for generated blowing noise via microphone ADC; no physical capture; game Mic Test / giant-battle acceptance unverified |
+| Framerate / widescreen | Original-rate pacing added; full-speed execution and BIS-specific true widescreen remain open; stretch and experimental adaptive 3D modes are explicitly labelled |
 | Mario/Luigi and Bowser combat | Not verified |
 | Giant battles, touch/microphone | Not verified |
-| Audio and save/load (Switch) | Save file is written via the runner path; audio and UI saving not implemented |
+| Audio and save/load (Switch) | Raw SAV backing loads/writes through runner; progress round-trip unverified; audio output not implemented |
 | Ending / full playthrough | Not tested |
-| Real Switch / Eden gameplay validation | Eden title/save-file rendering and Start input verified for interpreter build; real hardware and gameplay not yet validated |
+| Real Switch / Eden gameplay validation | Eden private-bank title/save-file rendering, swap hotkey and raw-save loading verified; real hardware, combat and full playthrough unverified |
 
 Only **European revision 0 (`CLJP`)** is currently accepted for extraction:
 
@@ -119,6 +124,8 @@ then `python tools/build_host.py host`.
 The experimental Switch frontend and local-only runtime build are documented in
 [`docs/SWITCH_RUNTIME.md`](docs/SWITCH_RUNTIME.md). They are separate from the
 installer NRO above; no experimental binary or generated game bank is shipped.
+See [`docs/RUNTIME_CONFIG.md`](docs/RUNTIME_CONFIG.md) for layouts, widescreen
+limitations, remapping, microphone controls, pacing and importing standard SAVs.
 
 See [`docs/AOT.md`](docs/AOT.md) for the pinned, tested `prepare`, `audit`,
 `generate`, and AArch64 object-smoke workflow. ARM9 analysis is decompressed

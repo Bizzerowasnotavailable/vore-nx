@@ -50,6 +50,8 @@ class RuntimeBuildTests(unittest.TestCase):
         for p in paths:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text("// synthetic build fixture\n")
+        (self.nds / "runner/src/io.cpp").write_text(
+            '#include "io.h"\ncase 0x50: g_tsc_conv = g_tsc_x; break;\n')
 
     def run_build(self, fail=False, banks=None):
         def run(command, **kwargs):

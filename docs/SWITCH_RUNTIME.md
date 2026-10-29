@@ -45,12 +45,14 @@ Place your own exact European revision-0 `CLJP` image at
 cartridge initialization. The published installer additionally checks SHA-256.
 Use a separate test SD directory and back up existing saves before experimenting.
 
-- A/B, D-pad, L/R map to the corresponding DS controls.
+- A/B/X/Y, D-pad, L/R map to the corresponding DS controls.
 - Plus is DS Start; Minus is DS Select.
 - Both stick-clicks together exit and request save flush.
+- ZR swaps screens; hold ZL for generated microphone blowing noise. All mappings
+  can be changed in `runtime.ini`; see [runtime configuration](RUNTIME_CONFIG.md).
 - Handheld touch is mapped only inside the displayed bottom LCD. The coordinate
   mapping is host-tested; actual Switch touch delivery is not yet validated.
-- Sound is drained but not played; microphone and Wi-Fi are not implemented.
+- Sound is drained but not played; physical microphone capture and Wi-Fi are not implemented.
 
 `sdmc:/switch/vore-nx/vore.log` records boot milestones, input transitions, actual
 CPU cycle counts, vblank count, PCs and framebuffer colour statistics. A queued
@@ -58,7 +60,8 @@ buffer alone is not proof of visible rendering; use an Eden/real-device visual
 check as well. A scheduler return below its requested target is logged as fatal
 rather than counted as a successful guest frame.
 
-Both screens fit completely in 1280x720 (472x354 each, 12-pixel gap). Source
+Both screens fit completely side-by-side in 1280x720 (about 633x475 each,
+12-pixel gap); vertical and experimental widescreen modes are configurable. Source
 pixels are XRGB words; the presenter converts to RGBA bytes and honours libnx's
 **byte** row stride. See the ROM-free `runtime-video` CTest target, also executed
 by `python tools/build_host.py host`.

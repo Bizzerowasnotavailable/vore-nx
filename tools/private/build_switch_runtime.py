@@ -89,6 +89,15 @@ def main():
     for path, _, _ in units:
         if not path.is_file():
             ap.error(f"missing source prerequisite: {path}")
+    # Stage only the known ADC-channel extension; dependency sources stay intact.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("switch_io_patch", Path(__file__).with_name("patch_runtime_io.py"))
+    patcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(patcher)
+    staged_io = obj / "runtime_io_switch.cpp"
+    patcher.stage(src / "io.cpp", staged_io)
+    units = [(staged_io if name == "core_io" else path, name, bank)
+             for path, name, bank in units]
 
     # Conservative header-content key: a changed ABI or generated header must
     # invalidate cached objects, not just a changed .cpp modification time.

@@ -537,3 +537,97 @@ The 51-bank build is still the performance/correctness checkpoint to complete.
   Public privacy audit passed for **56** source/license/workflow files.
 - Still unverified: static banks on AArch64, real Switch hardware, combat,
   microphone, audio output, save/load round-trip and complete progression.
+
+## 2026-10-29 - Requested runtime priorities: horizontal, saves and controls
+
+User priorities: horizontal screens, regular framerate, standard SAVs,
+widescreen, remappable controls, emulated microphone, screen-swap hotkey.
+
+### Implemented and measured
+
+- **Horizontal by default.** Original-aspect LCDs are side by side, with neither
+  cropped. Vertical remains selectable in `runtime.ini`. A private Eden capture
+  shows the castle/title on the left and reflected castle/menu on the right.
+- **Swap hotkey.** ZR swaps display rectangles on press, not every held frame.
+  Eden showed the menu on the left and title on the right after a logged swap.
+  Touch tracks LCD identity, including swaps and adaptive viewport boundaries.
+- **Remapping.** Original `runtime_config.hpp` parses transactional, validated
+  INI settings for every DS button and the swap/microphone/exit actions. Bindings
+  support single buttons, chords and `none`; this is file-based, not a GUI menu.
+- **X/Y correctness fix.** The old frontend sent only `0x3FF` idle, but
+  `nds_set_key_mask()` consumes bits 10/11 as X/Y. That held both buttons down
+  permanently. Idle is now `0xFFF`; X and Y are mapped and tested independently.
+- **Raw SAV loading fixed.** `nds_io_set_cartridge_save_path()` previously ran
+  after `nds_io_load_cartridge()`, so existing saves were never loaded. It now
+  runs before cartridge initialization, with explicit 8192-byte EEPROM config.
+  Eden logged `save: loaded SRAM byte-identical to raw file` before boot.
+  The supplied save is preserved as `.import-backup`; wrong sizes/unreadable
+  saves fail closed. Default filename is `rom.sav`, configurable by basename;
+  legacy `bis.sav` is retained only when no INI/default save exists.
+- Cartridge metadata cross-check: upstream melonDS ROMList entry `0x504A4C43`
+  (`CLJP`) uses save type 2, mapped by CartRetail to **8192 bytes**. No database
+  or ROM payload was copied into this project.
+- `tools/import_save.py` accepts exact raw SAVs and conservatively recognizes
+  uniform padding/identical mirrored copies up to 512 KiB. It exclusively creates
+  a new output; ambiguous trailers, emulator containers and overwrites are
+  refused. This does not convert region/checksum formats or emulator savestates.
+
+### AArch64 static-bank and performance checkpoint
+
+- The earlier long-running Bash build eventually failed because its script was
+  edited while Bash was still reading it. Completed giant-bank objects survived.
+  Re-running the stable script finished all **149 bank translation units** and
+  linked the **51-bank private NRO**. Do not edit an executing shell script again.
+- Eden logged `private banks registered: yes`, advanced real CPU cycles/vblanks,
+  and rendered non-black title/file-selection screens. No AArch64 differential
+  framebuffer comparison is claimed; x86-64 parity is not proof of AArch64 parity.
+- Single-threaded scene samples were around 9–11 guest fps. With the runtime's
+  threaded software renderer enabled (`renderer_threads=2`), title samples were
+  around **18 fps**, with later scenes around **10–12 fps**. These are different
+  scene samples, not a controlled benchmark proving a particular speedup.
+- One measured title interval: **18.26 guest fps**, **50.34 ms scheduler** and
+  **4.39 ms presenter** per iteration. Later: 12.08 fps, 78.35 ms scheduler,
+  4.37 ms presenter. CPU/device execution, not just screen copying, dominates.
+- Counters confirm actual static execution: one title snapshot had ARM9
+  10,957,007 static cache hits / 1,703,288 absent hits, ARM7 2,908,414 / 6, and
+  cumulative Tier-3 instruction counts 1,405,761 / 10. These counters are not a
+  complete coverage claim and do not establish game completion.
+- Added monotonic, fractional-remainder pacing at the original LCD rate using
+  **2130 system cycles × 263 lines × 2 = 1,120,380 ARM9 cycles/frame**. This
+  corrects the earlier approximate 1,120,590 frontend budget. Long stalls reset
+  the wall-clock deadline instead of causing runaway catch-up. A limiter cannot
+  make a slow runtime full speed: **regular full-speed execution remains open**.
+
+### Microphone and widescreen boundaries
+
+- Hold ZL for deterministic generated blowing noise around the unsigned 12-bit
+  microphone ADC midpoint; release supplies midpoint silence. The local Python
+  builder stages the known channel-6 SPI extension in a private source copy and
+  refuses unknown patch context. The local legacy checkout has the same guarded
+  Switch-only extension so desktop builds do not require frontend headers.
+- Eden logged microphone-button state changes. ADC generation and its channel
+  patch are host-tested; **game Mic Test / giant-battle acceptance is unverified**.
+  Ordinary title/gameplay samples did not request microphone conversions.
+- `aspect=stretch` explicitly distorts LCDs to 16:9, without adding content.
+  `aspect=adaptive` opts into a 342x192 3D surface and the upstream adaptive
+  compositor. **BIS 2D camera expansion, HUD and object-culling patches are not
+  implemented/validated; true game widescreen remains incomplete.** Do not
+  advertise wide output rectangles as additional visible world content.
+
+### Validation and build state
+
+- Host: **260 parser/hash checks**, **144 display combinations** (orientations,
+  aspects, swapped states, sizes), patterned pixel/stride/guard checks,
+  swap-aware touch, controls/config, microphone samples and frame-pacer checks.
+- Python: **40 passed, one platform skip**, including import preservation,
+  invalid-size/container rejection and explicit/idempotent ADC patching.
+- Final native-Python build cross-compiled the complete updated interpreter
+  runtime, including staged microphone I/O and fractional-rate pacing. The
+  private static-bank ELF/NRO also rebuilt successfully using retained bank
+  objects. Public privacy audit passed for **64** source/license/workflow files.
+- Private banks NRO remains private; no ROM, bank C/object, capture, log or save
+  belongs in publication. New original source/config docs are public-safe.
+- The running Eden instance holds the original NRO open, so the newest private
+  ELF was packaged separately as `vore-nx-private-priorities.nro` rather than
+  stopping that session to replace it. Final pacing/touch-boundary changes still
+  need a fresh Eden launch after packaging. No release NRO was replaced.
