@@ -19,9 +19,10 @@ include the installer NRO and source package. Read the limitations before use.
 |---|---|
 | Asset-free Switch NRO | Cross-compiled with devkitA64/libnx |
 | Exact-ROM verification and private extraction | Implemented; test results in `JOURNEY.MD` |
-| Private static banks (desktop) | 10 content-validated banks from a Tier-3 coverage session: main ARM9/ARM7 images, 6 ARM9 overlays, 2 relocated ARM7 aliases (private build only) |
+| Private static banks (desktop) | 51 content-validated banks generated from measured Tier-3 coverage: main ARM9/ARM7 images, 6 ARM9 overlays, 2 relocated ARM7 aliases, 41 runtime-materialized page banks (private build only) |
 | Private desktop ndsrecomp runtime | Boots to title screen, save-file screen, Toad Town exploration and in-game dialogue; scripted Start/A/D-pad input moves Mario (private build only) |
-| Static-code share at runtime | Desktop session: 92% of ARM9 dispatches and 83% of ARM7 dispatches resolve to recompiled code instead of the interpreter (private measurement) |
+| Static-code share at runtime | Desktop session: 92.5% of ARM9 dispatches and 100% of ARM7 dispatches resolve to recompiled code instead of the interpreter (private measurement) |
+| Static-bank correctness | Differential test, banks vs. forced Tier-3 interpretation: 6/6 framebuffer checkpoints byte-identical (private measurement) |
 | Interactive desktop frontend | `tools/private/play_tk.py` (private tooling; needs a local runner build) |
 | Switch game execution | Not implemented |
 | Mario/Luigi and Bowser combat | Not verified |

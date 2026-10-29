@@ -141,6 +141,10 @@ def main() -> int:
     ap.add_argument("--skip-coverage", action="store_true")
     ap.add_argument("--ingest", type=Path, default=INGEST,
                     help="ingest output directory holding seeds/ and images/")
+    ap.add_argument("--extra-seed", nargs="*", default=[], metavar="ADDR[:MODE]",
+                    help="extra entry points added to whichever bank range "
+                         "contains ADDR; used when the coverage manifest "
+                         "observed a dispatch target that ingest did not seed")
     args = ap.parse_args()
 
     if not RECOMPILER.is_file():
@@ -223,6 +227,15 @@ def main() -> int:
     if args.only:
         wanted = set(args.only)
         jobs = [j for j in jobs if j["bank"] in wanted]
+
+    for spec in args.extra_seed:
+        text, _, mode = spec.partition(":")
+        addr = int(text, 0)
+        for job in jobs:
+            if job["load"] <= addr < job["load"] + job["size"]:
+                if addr not in {s["addr"] for s in job["seeds"]}:
+                    job["seeds"].append(dict(addr=addr, mode=mode or "arm"))
+                    print(f"extra seed 0x{addr:08X} -> {job['bank']}")
 
     print(f"building {len(jobs)} banks")
     results = []

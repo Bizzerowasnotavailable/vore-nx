@@ -104,9 +104,10 @@ def main() -> int:
     ap.add_argument("--step", type=int, default=30_000_000)
     ap.add_argument("--hold", type=int, default=12_000_000)
     ap.add_argument("--manifest", default="session")
-    ap.add_argument("--scenario", choices=("reach", "sweep"), default="reach",
+    ap.add_argument("--scenario", choices=("reach", "sweep", "story"),
+                    default="reach",
                     help="reach: scripted path into Toad Town; sweep: extra "
-                         "movement/menu rounds for broader code coverage")
+                         "movement/menu rounds; story: dialogue-first A mashing")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--leg", type=int, default=250_000_000,
                     help="ARM9 cycles per movement leg in the sweep scenario")
@@ -183,6 +184,21 @@ def main() -> int:
         sess.tap("b", args.hold)
         sess.run(300_000_000)
         sess.shot("10-after-b")
+
+        if args.scenario == "story":
+            # Dialogue-first scenario: mash A to advance cutscenes and talk to
+            # NPCs, interleaved with short walks so the party actually moves
+            # between triggers. Used to reach combat and menu code.
+            for block in range(args.rounds):
+                for i in range(12):
+                    sess.tap("a", args.hold)
+                sess.shot(f"s{block}-after-a")
+                for direction in ("right", "down"):
+                    sess.keys({direction})
+                    sess.run(args.leg // 2)
+                    sess.keys(set())
+                    sess.run(args.step)
+                sess.shot(f"s{block}-after-walk")
 
         if args.scenario == "sweep":
             # Broad sweep: the point is not a specific destination but reaching

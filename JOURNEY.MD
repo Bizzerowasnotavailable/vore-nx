@@ -257,6 +257,9 @@ New private tooling, now published as source only (no ROM-derived output):
 - `tools/private/build_banks.py` — seeds to banks: main images re-seeded from
   coverage, overlays compiled at their own load address, relocated ARM7 aliases,
   and the runtime-materialized page banks; `--validate-live-bytes` on every one.
+- `tools/private/gen_switch_registry.py` — generates the AArch64 build's bank
+  registration table from a bank directory (the desktop runner has CMake do
+  this; the Switch compile script does not).
 - `tools/private/measure_play.py` — the repeatable measurement used below.
 - `tools/private/play_tk.py` — interactive Tk window (keyboard + stylus) so the
   result can be judged by playing rather than by frame captures.
@@ -316,6 +319,24 @@ for iterations 2 and 3 come from `tools/private/measure_play.py`.
 
 The residual interpretation is now short stubs — roughly 15 instructions per
 interpreter entry over 154,000 entries — rather than whole subsystems.
+
+### Differential validation of the generated code
+
+Speed alone would be worthless if the banks changed behaviour, so the banks were
+checked against the interpreter itself. The runner can force every instruction
+through Tier-3 (`force_tier3`), which makes the same deterministic timeline
+runnable twice — once with static banks, once fully interpreted — with both runs
+advancing to identical absolute cycle targets. Six checkpoints (title card,
+save-file screen, and one per movement leg) compared the framebuffers byte for
+byte:
+
+- **0 mismatches.** The interpreter reference pass executed 870.7 million ARM9
+  and 90.7 million ARM7 instructions; the banked pass executed the same work as
+  recompiled native code and fell through to the interpreter for 3.2 million
+  ARM9 instructions (260,706 entries) and 10 ARM7 instructions.
+- `tools/private/diff_tier3.py` performs this comparison. It is the correctness
+  gate that a "fast" bank set has to pass, and it is the reason bank validation
+  fails closed: a stale bank must fall back to the interpreter rather than run.
 
 ### Progression evidence
 

@@ -57,7 +57,8 @@ private.
    main images re-seeded from coverage, overlays compiled at their own load
    address, relocated ARM7 aliases, and the runtime page banks. Every bank is
    emitted with `--validate-live-bytes`, so a bank only runs where the guest's
-   live bytes still match the image it was generated from.
+   live bytes still match the image it was generated from. `--extra-seed` adds an
+   observed dispatch target that ingest did not seed.
 
 5. **Runner build** — the runner CMake globs a bank directory, infers CPU from
    the `_arm9_`/`_arm7_` name segment, and registers each bank group behind an
@@ -67,8 +68,17 @@ private.
    interpreter entries/instructions before and after a fixed play script, and
    interactive frames per second with per-frame framebuffer readback.
 
-7. **`play_tk.py`** — interactive Tk window for real play: arrows, Z/X as A/B,
+7. **`gen_switch_registry.py`** — regenerate the AArch64 build's bank registry
+   from a generated bank directory (the desktop runner gets this from CMake; the
+   Switch compile script does not).
+
+8. **`play_tk.py`** — interactive Tk window for real play: arrows, Z/X as A/B,
    Enter as Start, mouse as stylus.
+
+9. **`diff_tier3.py`** — the correctness gate. It runs the same deterministic
+   timeline twice, once with static banks and once with `force_tier3`, and
+   compares framebuffer digests at identical cycle targets. A difference is a
+   bank defect, not a rendering detail.
 
 `bench_fps.py` and `serve_capture.py` are the smaller pieces those scripts share
 (server client, PNG writer, throughput probe).
