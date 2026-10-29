@@ -47,3 +47,15 @@ no tool's translated cartridge output belongs in a public release. See
 Eden and REA/Ghidra are external test/analysis tools, not bundled dependencies.
 The cartridge parser and SHA-256 implementation here are independently authored
 project code, not copied from a ROM or proprietary SDK.
+
+## Experimental local runtime (not the installer release)
+
+The optional `tools/private/build_switch_runtime.py` build links local ndsrecomp
+runtime sources (MIT, Matthew Stanley), arm-recomp-core (MIT), FreeBIOS
+(BSD-2-Clause), and vendored melonDS software-renderer sources
+(GPL-3.0-or-later), in addition to libnx and the toolchain libraries above.
+Their exact notices remain in the prerequisite checkouts. The combined runtime
+binary is not covered solely by this repository's MIT license; distribution
+requires the applicable GPL source/notices and a separate privacy/license audit.
+No such runtime binary is published here. The optional title banks remain
+ROM-derived private output regardless of open-source dependency licensing.

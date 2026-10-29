@@ -40,6 +40,9 @@ def main(argv=None):
         sources = ["-std=c++17", "-Werror", "-Iinclude", "source/cartridge.cpp", "source/sha256.cpp"]
         run(common + sources + ["tests/core_tests.cpp", "-o", out / "vore-tests.exe"])
         run([out / "vore-tests.exe"])
+        run(common + ["-std=c++17", "-Werror", "-Iinclude",
+                      "tests/runtime_video_tests.cpp", "-o", out / "vore-video-tests.exe"])
+        run([out / "vore-video-tests.exe"])
         run(common + sources + ["source/host_main.cpp", "-o", out / "vore-rom.exe"])
         run([out / "vore-rom.exe"], expected=2)
         run(common + sources + ["tests/local_rom_tests.cpp", "-o", out / "vore-local-tests.exe"])

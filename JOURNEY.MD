@@ -458,4 +458,82 @@ reused on resume.
   the next checkpoint.
 - Audio output, touch input and saving from the Switch UI remain unimplemented.
 
+## 2026-10-29 - Correct framebuffer setup: game visible in Eden
 
+### Correction to the preceding presentation claim
+
+Inspection found that `present()` constructed an **uninitialized local
+`Framebuffer`** on every call, without `framebufferCreate()` or
+`framebufferMakeLinear()`. It also treated `Framebuffer.stride` as pixels even
+though the API supplies bytes, and the 2x stacked layout was 780 pixels tall
+inside a 720-pixel output. A log line after `framebufferBegin()` did not establish
+a valid queued buffer. The previous black-screen explanation (guest not writing
+VRAM) was an assumption, not a demonstrated cause. The old FPS estimate is also
+withdrawn: 600/37 is about 16, not 6, and those loop counts were not validated
+against real CPU/vblank progress. The new evidence below supersedes that claim.
+
+### Fix and independent tests
+
+- Create one persistent 1280x720 RGBA8888 double buffer, enable linear access,
+  render into the pointer actually returned by `framebufferBegin()`, use its
+  byte stride, queue with `framebufferEnd()`, and close on exit.
+- Both 256x192 LCDs now fit at 472x354 each, with a 12-pixel gap and no cropping.
+  XRGB-to-RGBA conversion is retained.
+- Original ROM-free `include/runtime_video.hpp` is shared with the frontend.
+  Host tests check colour primaries, full visible output, bounds, padded byte
+  strides, guard words and invalid inputs at twelve output-size combinations.
+- Log actual CPU cycles, PCs, vblank count and nonblack/nonuniform pixel counts;
+  reject a scheduler return below the requested target instead of silently
+  incrementing a purported frame count.
+- Enforce exact cartridge size and SHA-1 before device initialization (the
+  earlier frontend checked only `CLJP`; its private registry alone checked SHA-1).
+- Configure the controller explicitly. Start/Plus input was delivered through
+  Eden's mapped keyboard and visibly changed the title to the file-selection UI.
+
+### Measured visual result: interpreter-only, not a static-bank result
+
+Eden's separate portable test instance visibly displayed the Nintendo/AlphaDream
+startup sequence, the castle animation, full Mario & Luigi title with Start Game
+and Mic Test, the save-file screen with two NEW FILE slots, then the opening
+Toad Town scene after confirming New File / Start with A. This is an in-game
+scene, not yet a verified Mario movement or combat test. The captures are
+private local evidence, not committed artwork. The unrelated pre-existing Eden
+process was left untouched.
+
+```
+[   3.038] video: created 1280x720 RGBA8888 linear double buffer
+[   3.763] present: first buffer queued (1280x720 stride_bytes=5120)
+[   3.765] progress frame=0 cyc9=1120639 cyc7=560324 vblank=0
+[  52.432] progress frame=360 cyc9=404533248 cyc7=202266624 vblank=351
+           nonblack=48942/48161 varied=1085/2308
+```
+
+Observed Eden status-bar samples were about **1-5 fps** during rendered scenes.
+This is visibly functioning, slow execution, not a real-time playability claim.
+The 51-bank build is still the performance/correctness checkpoint to complete.
+
+### Source availability and remaining work
+
+- Moved the original frontend/shims into public source under
+  `tools/private/switch_runtime/`; generated registry/banks stay private.
+- Added `tools/private/build_switch_runtime.py`: local dependency arguments,
+  bounded jobs, serial giant banks, content-keyed object cache, atomic object
+  replacement, failure propagation, and explicit object-list linking. See
+  `docs/SWITCH_RUNTIME.md`. The native-Python build successfully cross-compiled
+  an interpreter NRO, and an immediate second build reused all compiled objects
+  (link/package only). A fresh Eden launch of that NRO rendered the castle
+  animation, logged a first queued buffer at 2.872 s, and confirmed Start press
+  and release (`0x3F7` then `0x3FF`). It exited the applet loop cleanly after
+  1,111 iterations without a logged scheduler shortfall; the exit cause was not
+  instrumented, so this does not validate the new exit chord.
+- Added host-tested inverse bottom-LCD touch mapping and frontend touch polling,
+  input-transition logging, and dual-stick-click exit/save flush. Actual touch
+  delivery and these new controls still need runtime testing.
+- Host validation so far: 260 parser/hash checks passed; video/touch-mapping
+  tests passed; Python tests additionally cover object caching, header
+  invalidation, failed-compile preservation and stale-object link exclusion.
+  Final Python result: **35 passed, one platform skip**; synthetic tests also
+  verify private-bank registry linking and serial `-O1` giant-bank selection.
+  Public privacy audit passed for **56** source/license/workflow files.
+- Still unverified: static banks on AArch64, real Switch hardware, combat,
+  microphone, audio output, save/load round-trip and complete progression.
